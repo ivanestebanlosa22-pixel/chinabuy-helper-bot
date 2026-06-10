@@ -5,14 +5,82 @@ const {
   EmbedBuilder
 } = require("discord.js");
 
-// ============================
-// CONFIG
-// ============================
-
 const TOKEN = process.env.DISCORD_TOKEN;
 
 const CANAL_BUSCAR_PRODUCTO_ID = process.env.CANAL_BUSCAR_PRODUCTO_ID || "1513307409517645934";
 const CANAL_CONVERTIR_LINK_ID = process.env.CANAL_CONVERTIR_LINK_ID || "1513307457110282400";
+
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const SPREADSHEET_PUBLISH_ID = process.env.SPREADSHEET_PUBLISH_ID;
+const SHEET_RANGE = process.env.SHEET_RANGE || "MAIN!A:R";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtZjzS2QKycTxLdJIbldisLxP9lmBNo8NlIzcXaWeZk/edit?gid=1553707851#gid=1553707851";
+
+const SHEET_NAME = SHEET_RANGE.split("!")[0];
+const SPREADSHEET_PUBLIC_URL = SPREADSHEET_PUBLISH_ID
+  ? `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_PUBLISH_ID}/pub?output=csv`
+  : `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+let products = [];
+
+function parseCSVRow(row) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < row.length; i++) {
+    if (row[i] === '"') {
+      inQuotes = !inQuotes;
+    } else if (row[i] === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += row[i];
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+async function loadProducts() {
+  try {
+    const res = await fetch(SPREADSHEET_PUBLIC_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const csv = await res.text();
+    const rows = csv.split("\n").map(r => parseCSVRow(r));
+    if (rows.length < 2) throw new Error("No data");
+
+    products = rows.slice(1)
+      .filter(r => r[0] && r[1])
+      .map((r, idx) => ({
+        id: r[0] || String(idx + 1),
+        nombre: r[1] || "",
+        marca: r[2] || "",
+        categoria: r[3] || "",
+        precio: r[4] || "N/A",
+        ranking: r[5] || "N/A",
+        weidianId: r[7] || "",
+        descripcionEs: r[16] || "",
+        descripcionEn: r[17] || ""
+      }));
+
+    console.log(`Products loaded: ${products.length}`);
+  } catch (e) {
+    console.log("Failed to load products:", e.message);
+  }
+}
+
+function extractWeidianId(text) {
+  const match = text.match(/item\.html\?itemID=(\d+)/);
+  return match ? match[1] : null;
+}
+
+function getAgentLinks(weidianId) {
+  if (!weidianId) return null;
+  return {
+    usfans: `https://www.usfans.com/product/3/${weidianId}?ref=RCGD5Y`,
+    litbuy: `https://litbuy.com/product/2/${weidianId}?inviteCode=YBMHFG55L`,
+    kakobuy: `https://www.kakobuy.com/item/details?url=${encodeURIComponent(`https://weidian.com/item.html?itemID=${weidianId}`)}&affcode=hc9hzs`
+  };
+}
 
 const client = new Client({
   intents: [
@@ -22,10 +90,6 @@ const client = new Client({
     GatewayIntentBits.GuildMembers
   ]
 });
-
-// ============================
-// RESPUESTAS BASE
-// ============================
 
 function respuestaAgentes() {
   return new EmbedBuilder()
@@ -58,14 +122,11 @@ function respuestaLinks() {
     .setTitle("🔄 Conversión de links | Link conversion")
     .setDescription(
       "━━━━━━━━━━━━━━━━━━━━━━\n" +
-      "🇪🇸 Pega tu link de Weidian, Taobao o 1688\n" +
-      "y lo convertimos a todos los agentes disponibles.\n\n" +
-      "📌 **Links soportados:**\n" +
-      "• weidian.com/item...\n" +
-      "• item.taobao.com...\n" +
-      "• detail.1688.com...\n\n" +
-      "🇬🇧 Paste your Weidian, Taobao or 1688 link\n" +
-      "and we'll convert it to all available agents.\n\n" +
+      "🇪🇸 Pega tu link de Weidian y lo convertimos\n" +
+      "a USFans, Litbuy y KakoBuy automáticamente.\n\n" +
+      "📌 **Formato:** `!convertir [link de weidian]`\n\n" +
+      "🇬🇧 Paste your Weidian link and we'll convert it\n" +
+      "to USFans, Litbuy and KakoBuy automatically.\n\n" +
       "━━━━━━━━━━━━━━━━━━━━━━\n" +
       "💡 Usa este comando en el canal #convertir-link"
     );
@@ -190,7 +251,7 @@ function respuestaAyuda() {
       "`!qc` — Qué es el QC y cómo interpretarlo\n" +
       "`!seguridad` — Cómo comprar seguro desde China\n" +
       "`!buscar [producto]` — Busca un producto en el catálogo\n" +
-      "`!convertir [enlace]` — Convierte un link entre agentes\n\n" +
+      "`!convertir [enlace]` — Convierte un link de Weidian a agentes\n\n" +
       "━━━━━━━━━━━━━━━━━━━━━━\n" +
       "🇬🇧 **ENGLISH**\n" +
       "`!agentes` — Recommended agents list with links\n" +
@@ -198,7 +259,7 @@ function respuestaAyuda() {
       "`!qc` — What is QC and how to read it\n" +
       "`!seguridad` — How to buy safely from China\n" +
       "`!buscar [product]` — Search a product in the catalog\n" +
-      "`!convertir [link]` — Convert a link between agents\n\n" +
+      "`!convertir [link]` — Convert a Weidian link to agents\n\n" +
       "━━━━━━━━━━━━━━━━━━━━━━\n" +
       "💬 También puedes mencionarme con @HelperBot [tu pregunta]\n" +
       "💬 You can also mention me with @HelperBot [your question]"
@@ -244,48 +305,31 @@ function respuestaLinkNoReconocido() {
     );
 }
 
-// ============================
-// LÓGICA AL MENCIONAR AL BOT
-// ============================
-
 function escogerRespuestaPorTexto(textoPlano) {
   const t = textoPlano.toLowerCase();
-
   if (t.includes("agente") || t.includes("usfans") || t.includes("litbuy") || t.includes("kakobuy")) {
     return respuestaAgentes();
   }
-
   if (t.includes("talla") || t.includes("size") || t.includes("numero") || t.includes("número")) {
     return respuestaTallas();
   }
-
   if (t.includes("qc") || t.includes("quality") || t.includes("calidad") || t.includes("legit")) {
     return respuestaQC();
   }
-
   if (t.includes("estafa") || t.includes("scam") || t.includes("seguridad") || t.includes("seguro")) {
     return respuestaSeguridad();
   }
-
   return respuestaMencion();
 }
 
-// ============================
-// EVENTO READY
-// ============================
-
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`🔥 Helper bot online como: ${client.user.tag}`);
+  await loadProducts();
 });
-
-// ============================
-// MENSAJES
-// ============================
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 1) ACTIVACIÓN POR MENCIÓN
   if (message.mentions.has(client.user)) {
     const texto = message.content.replace(/<@!?\d+>/g, "").trim();
     if (!texto) {
@@ -295,7 +339,6 @@ client.on("messageCreate", async (message) => {
     return message.reply({ embeds: [embed] });
   }
 
-  // 2) COMANDOS
   if (!message.content.startsWith("!")) return;
 
   const [cmdRaw, ...args] = message.content.slice(1).split(/\s+/);
@@ -309,11 +352,40 @@ client.on("messageCreate", async (message) => {
     if (message.channel.id !== CANAL_BUSCAR_PRODUCTO_ID) {
       return message.reply("⚠️ 🇪🇸 Usa este comando solo en #buscar-producto / 🇺🇸 Use this command only in #buscar-producto");
     }
-    const query = args.join(" ");
+    const query = args.join(" ").toLowerCase();
     if (!query) {
       return message.reply({ embeds: [respuestaBuscar()] });
     }
-    return message.reply({ embeds: [respuestaNoResultados(query)] });
+
+    if (!products.length) {
+      return message.reply("📦 Los productos aún se están cargando, espera un momento...");
+    }
+
+    const results = products
+      .filter(p => p.nombre.toLowerCase().includes(query) || p.marca.toLowerCase().includes(query))
+      .slice(0, 5);
+
+    if (results.length === 0) {
+      return message.reply({ embeds: [respuestaNoResultados(query)] });
+    }
+
+    const lines = results.map((p, i) => {
+      const links = getAgentLinks(p.weidianId);
+      let line = `**${i + 1}. ${p.nombre}**\n💰 $${p.precio}`;
+      if (p.marca) line += ` | 🏷️ ${p.marca}`;
+      if (links) {
+        line += `\n🔥 [USFans](${links.usfans}) • ⚡ [Litbuy](${links.litbuy}) • 🚀 [KakoBuy](${links.kakobuy})`;
+      }
+      return line;
+    });
+
+    const embed = new EmbedBuilder()
+      .setColor(0x22c55e)
+      .setTitle(`🔍 Resultados para "${query}"`)
+      .setDescription(lines.join("\n\n") + `\n\n📊 [Ver todos los productos](${SHEET_URL})`)
+      .setFooter({ text: "ChinaBuyHub" });
+
+    return message.reply({ embeds: [embed] });
   }
 
   if (cmd === "convertir") {
@@ -324,42 +396,50 @@ client.on("messageCreate", async (message) => {
     if (!link) {
       return message.reply({ embeds: [respuestaLinkNoReconocido()] });
     }
-    return message.reply({ embeds: [respuestaLinkNoReconocido()] });
+
+    const weidianId = extractWeidianId(link);
+    if (!weidianId) {
+      return message.reply({ embeds: [respuestaLinkNoReconocido()] });
+    }
+
+    const links = getAgentLinks(weidianId);
+    const embed = new EmbedBuilder()
+      .setColor(0xf97316)
+      .setTitle("🔄 Links convertidos")
+      .setDescription(
+        `🔹 **Weidian ID:** ${weidianId}\n\n` +
+        `🔥 [Comprar en USFans](${links.usfans})\n` +
+        `⚡ [Comprar en Litbuy](${links.litbuy})\n` +
+        `🚀 [Comprar en KakoBuy](${links.kakobuy})`
+      )
+      .setFooter({ text: "ChinaBuyHub" });
+
+    return message.reply({ embeds: [embed] });
   }
 
   if (cmd === "ayuda" || cmd === "help") {
-    const embed = respuestaAyuda();
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [respuestaAyuda()] });
   }
 
   if (cmd === "agentes") {
-    const embed = respuestaAgentes();
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [respuestaAgentes()] });
   }
 
   if (cmd === "tallas") {
-    const embed = respuestaTallas();
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [respuestaTallas()] });
   }
 
   if (cmd === "qc") {
-    const embed = respuestaQC();
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [respuestaQC()] });
   }
 
   if (cmd === "seguridad") {
-    const embed = respuestaSeguridad();
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [respuestaSeguridad()] });
   }
 
   if (cmd === "links") {
-    const embed = respuestaLinks();
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [respuestaLinks()] });
   }
 });
-
-// ============================
-// LOGIN
-// ============================
 
 client.login(TOKEN);
