@@ -19,13 +19,31 @@ const SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtZjzS2QKycTxLdJIbldi
 console.log("Cargando configuración...");
 console.log("CANAL_BUSCAR_PRODUCTO_ID:", CANAL_BUSCAR_PRODUCTO_ID);
 console.log("CANAL_CONVERTIR_LINK_ID:", CANAL_CONVERTIR_LINK_ID);
-console.log("SPREADSHEET_ID:", SPREADSHEET_ID ? "Configurado" : "No configurado");
-console.log("SPREADSHEET_PUBLISH_ID:", SPREADSHEET_PUBLISH_ID ? "Configurado" : "No configurado");
+console.log("SPREADSHEET_ID:", SPREADSHEET_ID || "No configurado");
+console.log("SPREADSHEET_PUBLISH_ID:", SPREADSHEET_PUBLISH_ID || "No configurado");
 
 const SHEET_NAME = SHEET_RANGE.split("!")[0];
-const SPREADSHEET_PUBLIC_URL = SPREADSHEET_PUBLISH_ID
-  ? `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_PUBLISH_ID}/pub?output=csv`
-  : `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+function getSheetUrls() {
+  const urls = [];
+  if (SPREADSHEET_PUBLISH_ID) {
+    urls.push({
+      name: "Publish ID",
+      url: `https://docs.google.com/spreadsheets/d/e/${SPREADSHEET_PUBLISH_ID}/pub?output=csv`
+    });
+  }
+  if (SPREADSHEET_ID) {
+    urls.push({
+      name: "Spreadsheet ID",
+      url: `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`
+    });
+    urls.push({
+      name: "Spreadsheet ID (pub)",
+      url: `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/pub?output=csv`
+    });
+  }
+  return urls;
+}
 
 let products = [];
 
@@ -48,15 +66,22 @@ function parseCSVRow(row) {
 }
 
 async function loadProducts() {
-  let retries = 3;
-  while (retries > 0) {
+  const urls = getSheetUrls();
+  if (!urls.length) {
+    console.log("❌ No hay SPREADSHEET_ID ni SPREADSHEET_PUBLISH_ID configurados");
+    return;
+  }
+
+  console.log(`Probando ${urls.length} URL(s) de Google Sheets...`);
+
+  for (const { name, url } of urls) {
     try {
-      console.log(`Intentando cargar productos... (${4 - retries}/3)`);
-      const res = await fetch(SPREADSHEET_PUBLIC_URL);
+      console.log(`Probando URL (${name}): ${url.substring(0, 80)}...`);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const csv = await res.text();
       const rows = csv.split("\n").map(r => parseCSVRow(r));
-      if (rows.length < 2) throw new Error("No data");
+      if (rows.length < 2) throw new Error("No data in CSV");
 
       products = rows.slice(1)
         .filter(r => r[0] && r[1])
@@ -72,19 +97,14 @@ async function loadProducts() {
           descripcionEn: r[17] || ""
         }));
 
-      console.log(`✅ Productos cargados: ${products.length}`);
+      console.log(`✅ Productos cargados con URL (${name}): ${products.length}`);
       return;
     } catch (e) {
-      retries--;
-      console.log(`❌ Error cargando productos: ${e.message}`);
-      if (retries > 0) {
-        console.log(`Reintentando en 5 segundos... (${retries} intentos restantes)`);
-        await new Promise(r => setTimeout(r, 5000));
-      } else {
-        console.log("❌ No se pudieron cargar los productos después de 3 intentos");
-      }
+      console.log(`❌ URL (${name}) falló: ${e.message}`);
     }
   }
+
+  console.log("❌ Ninguna URL funcionó. Verifica las variables de entorno.");
 }
 
 function extractWeidianId(text) {
