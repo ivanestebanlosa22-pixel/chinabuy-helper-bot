@@ -2,7 +2,8 @@ require("dotenv").config();
 const {
   Client,
   GatewayIntentBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ActivityType
 } = require("discord.js");
 
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -14,6 +15,12 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SPREADSHEET_PUBLISH_ID = process.env.SPREADSHEET_PUBLISH_ID;
 const SHEET_RANGE = process.env.SHEET_RANGE || "MAIN!A:R";
 const SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtZjzS2QKycTxLdJIbldisLxP9lmBNo8NlIzcXaWeZk/edit?gid=1553707851#gid=1553707851";
+
+console.log("Cargando configuración...");
+console.log("CANAL_BUSCAR_PRODUCTO_ID:", CANAL_BUSCAR_PRODUCTO_ID);
+console.log("CANAL_CONVERTIR_LINK_ID:", CANAL_CONVERTIR_LINK_ID);
+console.log("SPREADSHEET_ID:", SPREADSHEET_ID ? "Configurado" : "No configurado");
+console.log("SPREADSHEET_PUBLISH_ID:", SPREADSHEET_PUBLISH_ID ? "Configurado" : "No configurado");
 
 const SHEET_NAME = SHEET_RANGE.split("!")[0];
 const SPREADSHEET_PUBLIC_URL = SPREADSHEET_PUBLISH_ID
@@ -334,123 +341,140 @@ function escogerRespuestaPorTexto(textoPlano) {
   return respuestaMencion();
 }
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`🔥 Helper bot online como: ${client.user.tag}`);
-  await loadProducts();
+  
+  client.user.setPresence({
+    activities: [{ name: "Escribe !help para ayuda", type: ActivityType.Watching }],
+    status: "online"
+  });
+
+  try {
+    await loadProducts();
+    console.log(`✅ Productos cargados: ${products.length}`);
+  } catch (e) {
+    console.error("❌ Error cargando productos:", e.message);
+  }
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+  try {
+    if (message.author.bot) return;
 
-  if (message.mentions.has(client.user)) {
-    const texto = message.content.replace(/<@!?\d+>/g, "").trim();
-    if (!texto) {
-      return message.reply({ embeds: [respuestaMencion()] });
-    }
-    const embed = escogerRespuestaPorTexto(texto);
-    return message.reply({ embeds: [embed] });
-  }
-
-  if (!message.content.startsWith("!")) return;
-
-  const [cmdRaw, ...args] = message.content.slice(1).split(/\s+/);
-  const cmd = cmdRaw.toLowerCase();
-
-  if (cmd === "ping") {
-    return message.reply("🏓 Pong! | Estoy vivo y listo para ayudarte.");
-  }
-
-  if (cmd === "buscar") {
-    if (message.channel.id !== CANAL_BUSCAR_PRODUCTO_ID) {
-      return message.reply("⚠️ 🇪🇸 Usa este comando solo en #buscar-producto / 🇺🇸 Use this command only in #buscar-producto");
-    }
-    const query = args.join(" ").toLowerCase();
-    if (!query) {
-      return message.reply({ embeds: [respuestaBuscar()] });
-    }
-
-    if (!products.length) {
-      return message.reply("📦 Los productos aún se están cargando, espera un momento...");
-    }
-
-    const results = products
-      .filter(p => p.nombre.toLowerCase().includes(query) || p.marca.toLowerCase().includes(query))
-      .slice(0, 5);
-
-    if (results.length === 0) {
-      return message.reply({ embeds: [respuestaNoResultados(query)] });
-    }
-
-    const lines = results.map((p, i) => {
-      const links = getAgentLinks(p.weidianId);
-      let line = `**${i + 1}. ${p.nombre}**\n💰 $${p.precio}`;
-      if (p.marca) line += ` | 🏷️ ${p.marca}`;
-      if (links) {
-        line += `\n🔥 [USFans](${links.usfans}) • ⚡ [Litbuy](${links.litbuy}) • 🚀 [KakoBuy](${links.kakobuy})`;
+    if (message.mentions.has(client.user)) {
+      const texto = message.content.replace(/<@!?\d+>/g, "").trim();
+      if (!texto) {
+        return message.reply({ embeds: [respuestaMencion()] });
       }
-      return line;
-    });
-
-    const embed = new EmbedBuilder()
-      .setColor(0x22c55e)
-      .setTitle(`🔍 Resultados para "${query}"`)
-      .setDescription(lines.join("\n\n") + `\n\n📊 [Ver todos los productos](${SHEET_URL})`)
-      .setFooter({ text: "ChinaBuyHub" });
-
-    return message.reply({ embeds: [embed] });
-  }
-
-  if (cmd === "convertir") {
-    if (message.channel.id !== CANAL_CONVERTIR_LINK_ID) {
-      return message.reply("⚠️ 🇪🇸 Usa este comando solo en #convertir-link / 🇺🇸 Use this command only in #convertir-link");
-    }
-    const link = args.join(" ");
-    if (!link) {
-      return message.reply({ embeds: [respuestaLinkNoReconocido()] });
+      const embed = escogerRespuestaPorTexto(texto);
+      return message.reply({ embeds: [embed] });
     }
 
-    const weidianId = extractWeidianId(link);
-    if (!weidianId) {
-      return message.reply({ embeds: [respuestaLinkNoReconocido()] });
+    if (!message.content.startsWith("!")) return;
+
+    const [cmdRaw, ...args] = message.content.slice(1).split(/\s+/);
+    const cmd = cmdRaw.toLowerCase();
+
+    console.log(`Comando recibido: !${cmd} en canal ${message.channel.id}`);
+
+    if (cmd === "ping") {
+      return message.reply("🏓 Pong! | Estoy vivo y listo para ayudarte.");
     }
 
-    const links = getAgentLinks(weidianId);
-    const embed = new EmbedBuilder()
-      .setColor(0xf97316)
-      .setTitle("🔄 Links convertidos")
-      .setDescription(
-        `🔹 **Weidian ID:** ${weidianId}\n\n` +
-        `🔥 [Comprar en USFans](${links.usfans})\n` +
-        `⚡ [Comprar en Litbuy](${links.litbuy})\n` +
-        `🚀 [Comprar en KakoBuy](${links.kakobuy})`
-      )
-      .setFooter({ text: "ChinaBuyHub" });
+    if (cmd === "buscar") {
+      if (message.channel.id !== CANAL_BUSCAR_PRODUCTO_ID) {
+        return message.reply("⚠️ 🇪🇸 Usa este comando solo en #buscar-producto / 🇺🇸 Use this command only in #buscar-producto");
+      }
+      const query = args.join(" ").toLowerCase();
+      if (!query) {
+        return message.reply({ embeds: [respuestaBuscar()] });
+      }
 
-    return message.reply({ embeds: [embed] });
-  }
+      if (!products.length) {
+        return message.reply("📦 Los productos aún se están cargando, espera un momento...");
+      }
 
-  if (cmd === "ayuda" || cmd === "help") {
-    return message.reply({ embeds: [respuestaAyuda()] });
-  }
+      const results = products
+        .filter(p => p.nombre.toLowerCase().includes(query) || p.marca.toLowerCase().includes(query))
+        .slice(0, 5);
 
-  if (cmd === "agentes") {
-    return message.reply({ embeds: [respuestaAgentes()] });
-  }
+      if (results.length === 0) {
+        return message.reply({ embeds: [respuestaNoResultados(query)] });
+      }
 
-  if (cmd === "tallas") {
-    return message.reply({ embeds: [respuestaTallas()] });
-  }
+      const lines = results.map((p, i) => {
+        const links = getAgentLinks(p.weidianId);
+        let line = `**${i + 1}. ${p.nombre}**\n💰 $${p.precio}`;
+        if (p.marca) line += ` | 🏷️ ${p.marca}`;
+        if (links) {
+          line += `\n🔥 [USFans](${links.usfans}) • ⚡ [Litbuy](${links.litbuy}) • 🚀 [KakoBuy](${links.kakobuy})`;
+        }
+        return line;
+      });
 
-  if (cmd === "qc") {
-    return message.reply({ embeds: [respuestaQC()] });
-  }
+      const embed = new EmbedBuilder()
+        .setColor(0x22c55e)
+        .setTitle(`🔍 Resultados para "${query}"`)
+        .setDescription(lines.join("\n\n") + `\n\n📊 [Ver todos los productos](${SHEET_URL})`)
+        .setFooter({ text: "ChinaBuyHub" });
 
-  if (cmd === "seguridad") {
-    return message.reply({ embeds: [respuestaSeguridad()] });
-  }
+      return message.reply({ embeds: [embed] });
+    }
 
-  if (cmd === "links") {
-    return message.reply({ embeds: [respuestaLinks()] });
+    if (cmd === "convertir") {
+      if (message.channel.id !== CANAL_CONVERTIR_LINK_ID) {
+        return message.reply("⚠️ 🇪🇸 Usa este comando solo en #convertir-link / 🇺🇸 Use this command only in #convertir-link");
+      }
+      const link = args.join(" ");
+      if (!link) {
+        return message.reply({ embeds: [respuestaLinkNoReconocido()] });
+      }
+
+      const weidianId = extractWeidianId(link);
+      if (!weidianId) {
+        return message.reply({ embeds: [respuestaLinkNoReconocido()] });
+      }
+
+      const links = getAgentLinks(weidianId);
+      const embed = new EmbedBuilder()
+        .setColor(0xf97316)
+        .setTitle("🔄 Links convertidos")
+        .setDescription(
+          `🔹 **Weidian ID:** ${weidianId}\n\n` +
+          `🔥 [Comprar en USFans](${links.usfans})\n` +
+          `⚡ [Comprar en Litbuy](${links.litbuy})\n` +
+          `🚀 [Comprar en KakoBuy](${links.kakobuy})`
+        )
+        .setFooter({ text: "ChinaBuyHub" });
+
+      return message.reply({ embeds: [embed] });
+    }
+
+    if (cmd === "ayuda" || cmd === "help") {
+      return message.reply({ embeds: [respuestaAyuda()] });
+    }
+
+    if (cmd === "agentes") {
+      return message.reply({ embeds: [respuestaAgentes()] });
+    }
+
+    if (cmd === "tallas") {
+      return message.reply({ embeds: [respuestaTallas()] });
+    }
+
+    if (cmd === "qc") {
+      return message.reply({ embeds: [respuestaQC()] });
+    }
+
+    if (cmd === "seguridad") {
+      return message.reply({ embeds: [respuestaSeguridad()] });
+    }
+
+    if (cmd === "links") {
+      return message.reply({ embeds: [respuestaLinks()] });
+    }
+  } catch (e) {
+    console.error("Error procesando mensaje:", e.message);
   }
 });
 
