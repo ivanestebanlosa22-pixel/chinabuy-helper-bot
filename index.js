@@ -267,14 +267,26 @@ function respuestaAyuda() {
 }
 
 function respuestaMencion() {
+  const popularProducts = products.slice(0, 3).map((p, i) => {
+    const links = getAgentLinks(p.weidianId);
+    return `**${i + 1}. ${p.nombre}**\n💰 $${p.precio} | 🏷️ ${p.marca}\n🔥 [USFans](${links.usfans}) • ⚡ [Litbuy](${links.litbuy}) • 🚀 [KakoBuy](${links.kakobuy})\n`;
+  }).join("\n");
+
   return new EmbedBuilder()
     .setColor(0x6366f1)
     .setTitle("🤖 Helper Bot FindsES")
     .setDescription(
       "¡Hola! Soy el Helper Bot de FindsES.\n\n" +
-      "Puedo ayudarte con estos comandos:\n" +
-      "`!agentes` `!tallas` `!qc` `!seguridad` `!buscar` `!convertir`\n\n" +
-      "Para ver todos los comandos: `!help`"
+      "Puedo ayudarte con:\n" +
+      "🔍 **Buscar productos** - `!buscar [producto]`\n" +
+      "🔄 **Convertir links** - `!convertir [link de weidian]`\n" +
+      "🛍️ **Ver agentes recomendados** - `!agentes`\n" +
+      "📏 **Guía de tallas** - `!tallas`\n" +
+      "📸 **Qué es el QC** - `!qc`\n" +
+      "🔒 **Cómo comprar seguro** - `!seguridad`\n\n" +
+      "**Productos populares:**\n" +
+      `${popularProducts}\n` +
+      "💡 Usa los comandos o pregunta directamente: `!buscar [tu producto]`"
     );
 }
 
