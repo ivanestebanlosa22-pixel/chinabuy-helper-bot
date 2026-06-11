@@ -48,30 +48,42 @@ function parseCSVRow(row) {
 }
 
 async function loadProducts() {
-  try {
-    const res = await fetch(SPREADSHEET_PUBLIC_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const csv = await res.text();
-    const rows = csv.split("\n").map(r => parseCSVRow(r));
-    if (rows.length < 2) throw new Error("No data");
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      console.log(`Intentando cargar productos... (${4 - retries}/3)`);
+      const res = await fetch(SPREADSHEET_PUBLIC_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const csv = await res.text();
+      const rows = csv.split("\n").map(r => parseCSVRow(r));
+      if (rows.length < 2) throw new Error("No data");
 
-    products = rows.slice(1)
-      .filter(r => r[0] && r[1])
-      .map((r, idx) => ({
-        id: r[0] || String(idx + 1),
-        nombre: r[1] || "",
-        marca: r[2] || "",
-        categoria: r[3] || "",
-        precio: r[4] || "N/A",
-        ranking: r[5] || "N/A",
-        weidianId: r[7] || "",
-        descripcionEs: r[16] || "",
-        descripcionEn: r[17] || ""
-      }));
+      products = rows.slice(1)
+        .filter(r => r[0] && r[1])
+        .map((r, idx) => ({
+          id: r[0] || String(idx + 1),
+          nombre: r[1] || "",
+          marca: r[2] || "",
+          categoria: r[3] || "",
+          precio: r[4] || "N/A",
+          ranking: r[5] || "N/A",
+          weidianId: r[7] || "",
+          descripcionEs: r[16] || "",
+          descripcionEn: r[17] || ""
+        }));
 
-    console.log(`Products loaded: ${products.length}`);
-  } catch (e) {
-    console.log("Failed to load products:", e.message);
+      console.log(`✅ Productos cargados: ${products.length}`);
+      return;
+    } catch (e) {
+      retries--;
+      console.log(`❌ Error cargando productos: ${e.message}`);
+      if (retries > 0) {
+        console.log(`Reintentando en 5 segundos... (${retries} intentos restantes)`);
+        await new Promise(r => setTimeout(r, 5000));
+      } else {
+        console.log("❌ No se pudieron cargar los productos después de 3 intentos");
+      }
+    }
   }
 }
 
@@ -349,12 +361,7 @@ client.once("clientReady", async () => {
     status: "online"
   });
 
-  try {
-    await loadProducts();
-    console.log(`✅ Productos cargados: ${products.length}`);
-  } catch (e) {
-    console.error("❌ Error cargando productos:", e.message);
-  }
+  await loadProducts();
 });
 
 client.on("messageCreate", async (message) => {
