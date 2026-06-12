@@ -14,7 +14,7 @@ const CANAL_CONVERTIR_LINK_ID = process.env.CANAL_CONVERTIR_LINK_ID || "15133074
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SPREADSHEET_PUBLISH_ID = process.env.SPREADSHEET_PUBLISH_ID;
 const SHEET_RANGE = process.env.SHEET_RANGE || "MAIN!A:R";
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/1QtZjzS2QKycTxLdJIbldisLxP9lmBNo8NlIzcXaWeZk/edit?gid=1553707851#gid=1553707851";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1woqEzQPAwgERfKouZveua5Yr-6O2JDN0Cv-WnUyjt7U/edit?gid=1553707851#gid=1553707851";
 
 console.log("Cargando configuración...");
 console.log("CANAL_BUSCAR_PRODUCTO_ID:", CANAL_BUSCAR_PRODUCTO_ID);
